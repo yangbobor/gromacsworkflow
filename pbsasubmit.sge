@@ -1,0 +1,59 @@
+#$ -cwd
+#$ -j y
+#$ -S /bin/bash
+#$ -pe smp 8
+#$ -m abes -M fengxing888851@gmail.com
+#$ -q luokai.q
+#$ -N STMLpbsa 
+
+###User's Input File and Output File
+JOBNAME=STMLpbsa
+INPUTNAME=$JOBNAME
+OUTPUTNAME=$JOBNAME.log
+INPUTDIR=$SGE_O_WORKDIR
+##modify here
+SKIP=10
+JOBID=3392400
+echo $HOSTNAME
+echo $INPUTDIR
+
+###Copy file to local filesystem /tmp
+JOB_RUN_DIR=/tmp/$USER/$JOB_ID
+mkdir -p $JOB_RUN_DIR
+
+
+###### Here is your code beginning ######
+
+#1. copy files from home to execution host
+cp -r $INPUTDIR/$JOBID/* $JOB_RUN_DIR/
+#cp -r $INPUTDIR/*.ndx $JOB_RUN_DIR/
+cp $INPUTDIR/*.mdp $JOB_RUN_DIR/
+
+#2. go to job run dir in the host
+cd $JOB_RUN_DIR
+
+#3. set enviroment
+##gmx
+export PATH=$PATH:/home/luokai/yfz/software/gromacs/bin/GMXRC:/home/luokai/yfz/software/gromacs/bin
+##mmpbsa
+export PATH=$PATH:/home/luokai/yfz/software/g_mmpbsa/bin
+export PATH=$PATH:/home/luokai/yfz/software/gromacs/bin/GMXRC
+export GMX_PME_NTHREADS=8
+export OMP_NUM_THREADS=8
+
+#4. run it.
+#echo 0 0 | gmx trjconv -s md_0_1.tpr -f md_0_1.xtc -o md_0_1_noPBC.xtc -pbc mol -center
+#echo 4 4 | gmx rms -s md_0_1.tpr -f md_0_1_noPBC.xtc -o rmsd.xvg -tu ns
+##check -b & -e & -skip
+gmx trjconv -f md_0_1_noPBC.xtc -b 5000 -e 10000 -o md_0_1_skip$SKIP.xtc -skip 10 
+##check echo
+echo 18 19 | g_mmpbsa -f md_0_1_skip$SKIP.xtc -s md_0_1.tpr -n index.ndx -pdie 2 -decomp
+echo 18 19 | g_mmpbsa -f md_0_1_skip$SKIP.xtc -s md_0_1.tpr -n index.ndx -i mmpbsa_polar.mdp -nomme -pbsa -decomp
+echo 18 19 | g_mmpbsa -f md_0_1_skip$SKIP.xtc -s md_0_1.tpr -n index.ndx -i apolar_sasa.mdp -nomme -pbsa -decomp -apol sasa.xvg -apcon 
+
+#5. copy results to home
+## Copy file from local /tmp to NFS filesystem /home
+cp $JOB_RUN_DIR/*.dat $INPUTDIR/
+cp $JOB_RUN_DIR/*.xvg $INPUTDIR/
+rm -rf $JOB_RUN_DIR/
+

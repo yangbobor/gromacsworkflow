@@ -1,0 +1,64 @@
+#$ -cwd
+#$ -j y
+#$ -S /bin/bash
+#$ -pe smp 8
+#$ -q luokai.q
+#$ -N RLSQ
+
+cp /home/luokai/yfz/software/gromacs/share/gromacs/top/residuetypes.dat ./
+
+###User's Input File and Output File
+JOBNAME=RLSQ
+INPUTNAME=$JOBNAME.pdb
+OUTPUTNAME=$JOBNAME.log
+INPUTDIR=$SGE_O_WORKDIR
+echo $HOSTNAME
+echo $INPUTDIR
+
+###Copy file to local filesystem /tmp
+JOB_RUN_DIR=/tmp/$USER/$JOB_ID
+mkdir -p $JOB_RUN_DIR
+
+
+###### Here is your code beginning ######
+
+#1. copy files from home to execution host
+cp  -r $INPUTDIR/* $JOB_RUN_DIR/
+#cp /home/luokai/yfz/yst/x/*.mdp $JOB_RUN_DIR/
+
+#2. go to job run dir in the host
+cd $JOB_RUN_DIR
+
+#3. set enviroment
+##gmx
+export PATH=$PATH:/home/luokai/yfz/software/gromacs/bin/GMXRC:/home/luokai/yfz/software/gromacs/bin
+##mmpbsa
+export PATH=$PATH:/home/luokai/yfz/software/g_mmpbsa/bin
+export PATH=$PATH:/home/luokai/yfz/software/gromacs/bin/GMXRC
+export GMX_PME_NTHREADS=8
+#export GMX_DISABLE_PINHT=on
+
+#4. run it.
+###a. change chain A to chain B, REMENBER to check the line number and modifi "71" below.
+#sed -i '1,71s/ A   / B   /' $INPUTNAME
+###b. run. !!REMEMBER to change force field below. -nt means the number of theards mdrun used.
+echo 15 | gmx pdb2gmx -f $INPUTNAME -o $JOBNAME_processed.gro -water spce
+gmx editconf -f $JOBNAME_processed.gro -o $JOBNAME_newbox.gro -c -d 1.0 -bt cubic
+gmx solvate -cp $JOBNAME_newbox.gro -cs spc216.gro -o $JOBNAME_solv.gro -p topol.top
+gmx grompp -f ions.mdp -c $JOBNAME_solv.gro -p topol.top -o ions.tpr -maxwarn 2
+echo 13 | gmx genion -s ions.tpr -o $JOBNAME_solv_ions.gro -p topol.top -pname NA -nname CL -neutral
+gmx grompp -f minim.mdp -c $JOBNAME_solv_ions.gro -p topol.top -o em.tpr
+gmx mdrun -nt 8 -pin off -ntomp 8 -ntomp_pme 8 -deffnm em
+gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -o nvt.tpr
+gmx mdrun -nt 8 -pin off -ntomp 8 -ntomp_pme 8 -deffnm nvt -v
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr
+gmx mdrun -nt 8 -pin off -ntomp 8 -ntomp_pme 8 -deffnm npt -v
+gmx grompp -f md.mdp -c npt.gro -t npt.cpt -p topol.top -o md_0_1.tpr
+gmx mdrun -nt 8 -pin off -ntomp 8 -ntomp_pme 8 -deffnm md_0_1 -v
+
+#5. copy results to home
+## Copy file from local /tmp to NFS filesystem /home
+/bin/rm $JOB_RUN_DIR/*.mdp
+cp -rf $JOB_RUN_DIR/ $INPUTDIR/
+rm -rf $JOB_RUN_DIR/
+
